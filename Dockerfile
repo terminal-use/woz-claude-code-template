@@ -39,11 +39,7 @@ COPY pyproject.toml /app/pyproject.toml
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system .
 
-# Copy the source code, config, and bundled skills
 COPY src /app/src
-COPY skills /app/src/_embedded_skills
-COPY skills /opt/coding-workspace-skills
-RUN mkdir -p /root/.claude && cp -a /opt/coding-workspace-skills /root/.claude/skills
 
 # Set environment variables
 ENV PYTHONPATH=/app
