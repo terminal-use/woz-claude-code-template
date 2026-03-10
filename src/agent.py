@@ -43,7 +43,8 @@ If this task includes Slack thread context (`slack_channel` and `slack_thread_ts
 - Before ending the turn, post at least one user-visible reply in that thread.
 - Include a short summary of what you changed or checked.
 - If blocked, post the exact blocker in that thread.
-- Use the `using-slack-tools` skill script at `/app/skills/using-slack-tools/scripts/slack_tools.py`.
+- Use `using-slack-tools` script when available. Check, in order: `/workspace/skills/using-slack-tools/scripts/slack_tools.py`, `/workspace/.claude/skills/using-slack-tools/scripts/slack_tools.py`, `/workspace/.codex/skills/using-slack-tools/scripts/slack_tools.py`, `/app/skills/using-slack-tools/scripts/slack_tools.py`.
+- If no script path exists, post directly via Slack Web API `chat.postMessage` using `SLACK_BOT_TOKEN`, `WOZ_SLACK_CHANNEL`, and `WOZ_SLACK_THREAD_TS`.
 - Do not rely only on Terminal Use output for user-visible communication.
 """.strip()
 
