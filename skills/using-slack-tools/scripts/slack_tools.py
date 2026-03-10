@@ -78,12 +78,37 @@ def format_response(data: dict) -> str:
 # --- Messages ---
 
 
+def _resolve_sender_profile(
+    *,
+    username: str | None = None,
+    icon_emoji: str | None = None,
+    icon_url: str | None = None,
+) -> dict:
+    resolved_username = (username or os.environ.get("WOZ_SLACK_REPLY_USERNAME", "")).strip()
+    resolved_icon_emoji = (
+        icon_emoji or os.environ.get("WOZ_SLACK_REPLY_ICON_EMOJI", "")
+    ).strip()
+    resolved_icon_url = (icon_url or os.environ.get("WOZ_SLACK_REPLY_ICON_URL", "")).strip()
+
+    profile: dict[str, str] = {}
+    if resolved_username:
+        profile["username"] = resolved_username[:80]
+    if resolved_icon_url:
+        profile["icon_url"] = resolved_icon_url
+    elif resolved_icon_emoji:
+        profile["icon_emoji"] = resolved_icon_emoji
+    return profile
+
+
 def send_message(
     channel: str,
     text: str,
     thread_ts: str = None,
     blocks: str = None,
     unfurl_links: bool = True,
+    username: str | None = None,
+    icon_emoji: str | None = None,
+    icon_url: str | None = None,
 ) -> dict:
     """Send a message to a channel."""
     client = get_client()
@@ -97,6 +122,14 @@ def send_message(
 
     if thread_ts:
         kwargs["thread_ts"] = thread_ts
+
+    kwargs.update(
+        _resolve_sender_profile(
+            username=username,
+            icon_emoji=icon_emoji,
+            icon_url=icon_url,
+        )
+    )
 
     if blocks:
         try:
@@ -121,7 +154,13 @@ def send_message(
 
 
 def send_reply(
-    channel: str, thread_ts: str, text: str, broadcast: bool = False
+    channel: str,
+    thread_ts: str,
+    text: str,
+    broadcast: bool = False,
+    username: str | None = None,
+    icon_emoji: str | None = None,
+    icon_url: str | None = None,
 ) -> dict:
     """Reply to a message thread."""
     client = get_client()
@@ -133,6 +172,11 @@ def send_reply(
             thread_ts=thread_ts,
             text=text,
             reply_broadcast=broadcast,
+            **_resolve_sender_profile(
+                username=username,
+                icon_emoji=icon_emoji,
+                icon_url=icon_url,
+            ),
         )
         return {
             "success": True,
@@ -613,6 +657,9 @@ def main():
         help="Disable text normalization for escaped newlines/Markdown.",
     )
     msg_p.add_argument("--blocks", help="Block Kit JSON")
+    msg_p.add_argument("--username", help="Override Slack display name for this message")
+    msg_p.add_argument("--icon-emoji", help="Override Slack icon emoji for this message")
+    msg_p.add_argument("--icon-url", help="Override Slack icon URL for this message")
     msg_p.add_argument(
         "--no-unfurl", action="store_true", help="Disable link unfurling"
     )
@@ -635,6 +682,9 @@ def main():
     reply_p.add_argument(
         "--broadcast", action="store_true", help="Also post to channel"
     )
+    reply_p.add_argument("--username", help="Override Slack display name for this reply")
+    reply_p.add_argument("--icon-emoji", help="Override Slack icon emoji for this reply")
+    reply_p.add_argument("--icon-url", help="Override Slack icon URL for this reply")
 
     # Upload command
     upload_p = subparsers.add_parser("upload", help="Upload a file")
@@ -707,6 +757,9 @@ def main():
             thread_ts=args.thread,
             blocks=args.blocks,
             unfurl_links=not args.no_unfurl,
+            username=args.username,
+            icon_emoji=args.icon_emoji,
+            icon_url=args.icon_url,
         )
 
     elif args.command == "reply":
@@ -722,7 +775,15 @@ def main():
             sys.exit(1)
         if not args.literal_text:
             reply_text = _normalize_slack_text(reply_text)
-        result = send_reply(args.channel, args.thread, reply_text, args.broadcast)
+        result = send_reply(
+            args.channel,
+            args.thread,
+            reply_text,
+            args.broadcast,
+            username=args.username,
+            icon_emoji=args.icon_emoji,
+            icon_url=args.icon_url,
+        )
 
     elif args.command == "upload":
         result = upload_file(

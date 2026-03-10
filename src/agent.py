@@ -17,6 +17,7 @@ from .helpers import (
     _build_slack_mode_prompt,
     _task_metadata_str,
     _task_param_str,
+    _task_slack_reply_identity,
     _task_slack_thread_context,
 )
 from terminaluse.lib import (
@@ -44,7 +45,7 @@ If this task includes Slack thread context (`slack_channel` and `slack_thread_ts
 - Include a short summary of what you changed or checked.
 - If blocked, post the exact blocker in that thread.
 - Use `using-slack-tools` script when available. Check, in order: `/workspace/skills/using-slack-tools/scripts/slack_tools.py`, `/workspace/.claude/skills/using-slack-tools/scripts/slack_tools.py`, `/workspace/.codex/skills/using-slack-tools/scripts/slack_tools.py`, `/app/skills/using-slack-tools/scripts/slack_tools.py`.
-- If no script path exists, post directly via Slack Web API `chat.postMessage` using `SLACK_BOT_TOKEN`, `WOZ_SLACK_CHANNEL`, and `WOZ_SLACK_THREAD_TS`.
+- If no script path exists, post directly via Slack Web API `chat.postMessage` using `SLACK_BOT_TOKEN`, `WOZ_SLACK_CHANNEL`, `WOZ_SLACK_THREAD_TS`, and set `username` + icon fields from `WOZ_SLACK_REPLY_USERNAME`, `WOZ_SLACK_REPLY_ICON_EMOJI`, `WOZ_SLACK_REPLY_ICON_URL`.
 - Do not rely only on Terminal Use output for user-visible communication.
 """.strip()
 
@@ -126,6 +127,23 @@ async def handle_event(ctx: TaskContext, event: Event):
             os.environ["WOZ_SLACK_CHANNEL"] = slack_channel
         if slack_thread_ts:
             os.environ["WOZ_SLACK_THREAD_TS"] = slack_thread_ts
+        (
+            slack_reply_username,
+            slack_reply_icon_emoji,
+            slack_reply_icon_url,
+        ) = _task_slack_reply_identity(ctx)
+        if slack_reply_username:
+            os.environ["WOZ_SLACK_REPLY_USERNAME"] = slack_reply_username
+        else:
+            os.environ.pop("WOZ_SLACK_REPLY_USERNAME", None)
+        if slack_reply_icon_emoji:
+            os.environ["WOZ_SLACK_REPLY_ICON_EMOJI"] = slack_reply_icon_emoji
+        else:
+            os.environ.pop("WOZ_SLACK_REPLY_ICON_EMOJI", None)
+        if slack_reply_icon_url:
+            os.environ["WOZ_SLACK_REPLY_ICON_URL"] = slack_reply_icon_url
+        else:
+            os.environ.pop("WOZ_SLACK_REPLY_ICON_URL", None)
         user_message_for_model = _build_slack_mode_prompt(ctx, user_message)
 
         options = ClaudeAgentOptions(

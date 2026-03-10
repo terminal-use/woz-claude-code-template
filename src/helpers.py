@@ -71,6 +71,31 @@ def _task_slack_thread_context(ctx: TaskContext) -> tuple[str | None, str | None
     return (channel, thread_ts)
 
 
+def _task_slack_reply_identity(
+    ctx: TaskContext,
+) -> tuple[str | None, str | None, str | None]:
+    username = (
+        _task_param_str(ctx, "slack_reply_username")
+        or _task_metadata_str(ctx, "slack_reply_username")
+        or _task_param_str(ctx, "target_agent_branch")
+        or _task_metadata_str(ctx, "target_agent_branch")
+        or _task_param_str(ctx, "coding_agent_name")
+        or _task_metadata_str(ctx, "coding_agent_name")
+    )
+    if username:
+        username = username.strip()[:80]
+
+    icon_emoji = _task_param_str(ctx, "slack_reply_icon_emoji") or _task_metadata_str(
+        ctx, "slack_reply_icon_emoji"
+    )
+    icon_url = _task_param_str(ctx, "slack_reply_icon_url") or _task_metadata_str(
+        ctx, "slack_reply_icon_url"
+    )
+    if username and not icon_emoji:
+        icon_emoji = ":robot_face:"
+    return (username, icon_emoji, icon_url)
+
+
 def _build_slack_mode_prompt(ctx: TaskContext, user_message: str) -> str:
     channel, thread_ts = _task_slack_thread_context(ctx)
     if not channel or not thread_ts:
@@ -85,7 +110,7 @@ def _build_slack_mode_prompt(ctx: TaskContext, user_message: str) -> str:
         "- REQUIRED: include a short summary of what you changed or checked.\n"
         "- REQUIRED: if blocked/failing, post the exact blocker in that thread before ending.\n"
         "- Use `using-slack-tools` script when available. Check, in order: /workspace/skills/using-slack-tools/scripts/slack_tools.py, /workspace/.claude/skills/using-slack-tools/scripts/slack_tools.py, /workspace/.codex/skills/using-slack-tools/scripts/slack_tools.py, /app/skills/using-slack-tools/scripts/slack_tools.py.\n"
-        "- If no `slack_tools.py` path exists, post directly via Slack Web API `chat.postMessage` with `SLACK_BOT_TOKEN`, `WOZ_SLACK_CHANNEL`, and `WOZ_SLACK_THREAD_TS`.\n"
+        "- If no `slack_tools.py` path exists, post directly via Slack Web API `chat.postMessage` with `SLACK_BOT_TOKEN`, `WOZ_SLACK_CHANNEL`, `WOZ_SLACK_THREAD_TS`, and set `username` + icon fields from `WOZ_SLACK_REPLY_USERNAME`, `WOZ_SLACK_REPLY_ICON_EMOJI`, `WOZ_SLACK_REPLY_ICON_URL`.\n"
         "- Do not rely only on Terminal Use output; the user reads Slack.\n"
         "[/Slack thread response contract]\n\n"
         "[User request]\n"
