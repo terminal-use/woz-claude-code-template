@@ -5,6 +5,7 @@ messages to the Claude Agent SDK.
 """
 
 import logging
+import os
 import subprocess
 from typing import Any
 
@@ -12,6 +13,12 @@ from claude_agent_sdk import ClaudeAgentOptions, query
 from claude_agent_sdk.types import ResultMessage
 
 from .github_ops import _bootstrap_github_auth, _clone_repo, _ensure_valid_github_token
+from .helpers import (
+    _build_slack_mode_prompt,
+    _task_metadata_str,
+    _task_param_str,
+    _task_slack_thread_context,
+)
 from terminaluse.lib import (
     AgentServer,
     TaskContext,
@@ -29,7 +36,16 @@ logger = make_logger(__name__)
 
 WORKSPACE_DIR = "/workspace"
 
-SYSTEM_PROMPT = """After you finish a task, create a commit, push to GitHub, and draft a PR."""
+SYSTEM_PROMPT = """
+After you finish a task, create a commit, push to GitHub, and draft a PR.
+
+If this task includes Slack thread context (`slack_channel` and `slack_thread_ts`):
+- Before ending the turn, post at least one user-visible reply in that thread.
+- Include a short summary of what you changed or checked.
+- If blocked, post the exact blocker in that thread.
+- Use the `using-slack-tools` skill script at `/app/skills/using-slack-tools/scripts/slack_tools.py`.
+- Do not rely only on Terminal Use output for user-visible communication.
+""".strip()
 
 server = AgentServer()
 
@@ -98,12 +114,33 @@ async def handle_event(ctx: TaskContext, event: Event):
         session_id = state.get("session_id") if state else None
 
         await _ensure_valid_github_token(ctx, workspace_dir=WORKSPACE_DIR)
+        slack_bot_token = _task_param_str(ctx, "slack_bot_token") or _task_metadata_str(
+            ctx, "slack_bot_token"
+        )
+        if slack_bot_token:
+            os.environ["SLACK_BOT_TOKEN"] = slack_bot_token
+
+        slack_channel, slack_thread_ts = _task_slack_thread_context(ctx)
+        if slack_channel:
+            os.environ["WOZ_SLACK_CHANNEL"] = slack_channel
+        if slack_thread_ts:
+            os.environ["WOZ_SLACK_THREAD_TS"] = slack_thread_ts
+        user_message_for_model = _build_slack_mode_prompt(ctx, user_message)
 
         options = ClaudeAgentOptions(
             include_partial_messages=True,
             permission_mode="bypassPermissions",
             cwd=WORKSPACE_DIR,
-            allowed_tools=["Read", "Write", "Bash", "Edit", "Grep", "Glob", "Task"],
+            allowed_tools=[
+                "Read",
+                "Write",
+                "Bash",
+                "Edit",
+                "Grep",
+                "Glob",
+                "Task",
+                "Skill",
+            ],
             resume=session_id,
             system_prompt={
                 "type": "preset",
@@ -112,7 +149,7 @@ async def handle_event(ctx: TaskContext, event: Event):
             },
         )
 
-        async for message in query(prompt=user_message, options=options):
+        async for message in query(prompt=user_message_for_model, options=options):
             await ctx.messages.send(message)
             if isinstance(message, ResultMessage):
                 await ctx.state.update({"session_id": message.session_id})

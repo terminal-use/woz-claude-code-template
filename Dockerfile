@@ -40,6 +40,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system .
 
 COPY src /app/src
+COPY skills /app/skills
 
 # Set environment variables
 ENV PYTHONPATH=/app

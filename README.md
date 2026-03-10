@@ -2,6 +2,11 @@
 
 This repository is a Claude Agent SDK template.
 
+## Slack Reply Contract
+
+- This template includes `skills/using-slack-tools`.
+- For Slack-origin tasks (thread context present), the agent is instructed to post at least one user-visible thread reply with a short summary before ending the turn.
+
 ## Claude Agent SDK-specific Agent
 
 - [Python SDK][python-sdk]: This is a must read for any changes / creating a new claude agent sdk agent
