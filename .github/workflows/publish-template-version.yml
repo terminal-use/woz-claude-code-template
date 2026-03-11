@@ -1,0 +1,125 @@
+name: Publish Claude-Code Template Version
+
+on:
+  push:
+    tags:
+      - "claude-code-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without prefix (for example 1.0.6)"
+        required: true
+        type: string
+      commit_sha:
+        description: "Template commit SHA override (defaults to current HEAD)"
+        required: false
+        type: string
+      description:
+        description: "Catalog description override"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      TAG_PREFIX: claude-code-v
+      TEMPLATE_NAME: claude-code
+      TEMPLATE_REPO: terminal-use/woz-claude-code-template
+      CATALOG_REPO: terminal-use/woz-template-catalog
+    steps:
+      - name: Ensure catalog token is configured
+        if: ${{ secrets.CATALOG_REPO_TOKEN == '' }}
+        run: |
+          echo "CATALOG_REPO_TOKEN is missing."
+          exit 1
+
+      - name: Checkout template repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version metadata
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            ref_name="${GITHUB_REF_NAME}"
+            if [[ "$ref_name" != ${TAG_PREFIX}* ]]; then
+              echo "Unexpected tag format: $ref_name"
+              exit 1
+            fi
+            version="${ref_name#${TAG_PREFIX}}"
+            commit_sha="$(git rev-list -n 1 "$GITHUB_REF")"
+            description=""
+          else
+            version="${{ inputs.version }}"
+            commit_sha="${{ inputs.commit_sha }}"
+            description="${{ inputs.description }}"
+            if [[ -z "$commit_sha" ]]; then
+              commit_sha="$(git rev-parse HEAD)"
+            fi
+          fi
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must be semver X.Y.Z. Received: $version"
+            exit 1
+          fi
+
+          if [[ ! "$commit_sha" =~ ^[0-9a-fA-F]{7,64}$ ]]; then
+            echo "Commit SHA is invalid: $commit_sha"
+            exit 1
+          fi
+
+          echo "TEMPLATE_VERSION=$version" >> "$GITHUB_ENV"
+          echo "TEMPLATE_COMMIT_SHA=$commit_sha" >> "$GITHUB_ENV"
+          echo "TEMPLATE_DESCRIPTION=$description" >> "$GITHUB_ENV"
+
+      - name: Checkout catalog repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CATALOG_REPO }}
+          token: ${{ secrets.CATALOG_REPO_TOKEN }}
+          ref: main
+          path: .catalog
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Upsert catalog version
+        working-directory: .catalog
+        shell: bash
+        run: |
+          extra_description=()
+          if [[ -n "${TEMPLATE_DESCRIPTION:-}" ]]; then
+            extra_description=(--description "$TEMPLATE_DESCRIPTION")
+          fi
+
+          node scripts/upsert-template-version.mjs \
+            --catalog catalog.json \
+            --template "$TEMPLATE_NAME" \
+            --version "$TEMPLATE_VERSION" \
+            --template-repo "$TEMPLATE_REPO" \
+            --commit "$TEMPLATE_COMMIT_SHA" \
+            "${extra_description[@]}"
+
+          node scripts/validate-catalog.mjs catalog.json
+
+      - name: Commit and push catalog update
+        working-directory: .catalog
+        shell: bash
+        run: |
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "Catalog already up-to-date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add catalog.json
+          git commit -m "chore(catalog): publish ${TEMPLATE_NAME} ${TEMPLATE_VERSION}"
+          git push origin HEAD:main
